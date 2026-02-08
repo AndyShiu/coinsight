@@ -36,6 +36,57 @@ echo -e "${BOLD}========================================${NC}"
 echo ""
 
 # ============================================================
+#  0. Git 更新檢查
+# ============================================================
+REPO_URL="https://github.com/AndyShiu/coinsight.git"
+
+if command -v git &>/dev/null; then
+  info "檢查更新 (${REPO_URL})..."
+
+  if [ ! -d ".git" ]; then
+    # 尚未初始化 git，嘗試初始化並設定 remote
+    git init --quiet 2>/dev/null
+    git remote add origin "$REPO_URL" 2>/dev/null || git remote set-url origin "$REPO_URL" 2>/dev/null
+  else
+    # 確保 remote URL 正確
+    git remote set-url origin "$REPO_URL" 2>/dev/null || git remote add origin "$REPO_URL" 2>/dev/null
+  fi
+
+  git fetch origin --quiet 2>/dev/null
+
+  LOCAL=$(git rev-parse HEAD 2>/dev/null)
+  REMOTE=$(git rev-parse origin/main 2>/dev/null)
+
+  if [ -n "$REMOTE" ] && [ -n "$LOCAL" ] && [ "$LOCAL" != "$REMOTE" ]; then
+    BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+    if [ "$BEHIND" -gt 0 ]; then
+      warn "發現 ${BOLD}${BEHIND}${NC}${YELLOW} 個新的更新"
+      echo ""
+      git log --oneline HEAD..origin/main 2>/dev/null
+      echo ""
+      if ask_yes_no "是否更新至最新版本？"; then
+        info "更新中..."
+        if git pull --ff-only origin main 2>/dev/null; then
+          ok "已更新至最新版本"
+          NEED_REINSTALL=true
+        else
+          warn "自動更新失敗（可能有本地修改），請手動執行: git pull"
+        fi
+      else
+        info "跳過更新，使用目前版本"
+      fi
+    else
+      ok "已是最新版本"
+    fi
+  else
+    ok "已是最新版本"
+  fi
+  echo ""
+fi
+
+NEED_REINSTALL=${NEED_REINSTALL:-false}
+
+# ============================================================
 #  1. 環境檢查
 # ============================================================
 info "檢查環境..."
@@ -117,8 +168,12 @@ fi
 source backend/.venv/bin/activate
 
 # 檢查依賴
-if ! pip show fastapi &>/dev/null; then
-  warn "後端依賴尚未安裝"
+if ! pip show fastapi &>/dev/null || $NEED_REINSTALL; then
+  if $NEED_REINSTALL && pip show fastapi &>/dev/null; then
+    warn "偵測到版本更新，建議重新安裝後端依賴"
+  else
+    warn "後端依賴尚未安裝"
+  fi
   if ask_yes_no "是否自動安裝後端依賴？"; then
     info "安裝後端依賴中 (pip install -e \".[dev]\")..."
     cd backend
@@ -126,8 +181,11 @@ if ! pip show fastapi &>/dev/null; then
     cd "$SCRIPT_DIR"
     ok "後端依賴已安裝"
   else
-    err "需要安裝依賴才能啟動，請手動執行: cd backend && pip install -e \".[dev]\""
-    exit 1
+    if ! pip show fastapi &>/dev/null; then
+      err "需要安裝依賴才能啟動，請手動執行: cd backend && pip install -e \".[dev]\""
+      exit 1
+    fi
+    info "跳過後端依賴更新"
   fi
 else
   ok "後端依賴已安裝"
@@ -146,8 +204,12 @@ echo ""
 # ============================================================
 info "檢查前端環境..."
 
-if [ ! -d "frontend/node_modules" ]; then
-  warn "前端依賴尚未安裝"
+if [ ! -d "frontend/node_modules" ] || $NEED_REINSTALL; then
+  if $NEED_REINSTALL && [ -d "frontend/node_modules" ]; then
+    warn "偵測到版本更新，建議重新安裝前端依賴"
+  else
+    warn "前端依賴尚未安裝"
+  fi
   if ask_yes_no "是否自動安裝前端依賴？"; then
     info "安裝前端依賴中 (npm install)..."
     cd frontend
@@ -155,8 +217,11 @@ if [ ! -d "frontend/node_modules" ]; then
     cd "$SCRIPT_DIR"
     ok "前端依賴已安裝"
   else
-    err "需要安裝依賴才能啟動，請手動執行: cd frontend && npm install"
-    exit 1
+    if [ ! -d "frontend/node_modules" ]; then
+      err "需要安裝依賴才能啟動，請手動執行: cd frontend && npm install"
+      exit 1
+    fi
+    info "跳過前端依賴更新"
   fi
 else
   ok "前端依賴已安裝"

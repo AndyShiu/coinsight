@@ -17,6 +17,59 @@ set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
 :: ============================================================
+::  0. Git 更新檢查
+:: ============================================================
+set "NEED_REINSTALL=0"
+set "REPO_URL=https://github.com/AndyShiu/coinsight.git"
+
+where git >nul 2>&1
+if %errorlevel%==0 (
+    echo [INFO]  檢查更新 ^(%REPO_URL%^)...
+
+    if not exist ".git" (
+        git init --quiet >nul 2>&1
+        git remote add origin "%REPO_URL%" >nul 2>&1
+    ) else (
+        git remote set-url origin "%REPO_URL%" >nul 2>&1
+    )
+
+    git fetch origin --quiet >nul 2>&1
+
+    for /f %%h in ('git rev-parse HEAD 2^>nul') do set "LOCAL_REV=%%h"
+    for /f %%h in ('git rev-parse origin/main 2^>nul') do set "REMOTE_REV=%%h"
+
+    if defined REMOTE_REV (
+        if not "!LOCAL_REV!"=="!REMOTE_REV!" (
+            for /f %%c in ('git rev-list --count HEAD..origin/main 2^>nul') do set "BEHIND=%%c"
+            if !BEHIND! GTR 0 (
+                echo [WARN]  發現 !BEHIND! 個新的更新
+                echo.
+                git log --oneline HEAD..origin/main 2>nul
+                echo.
+                set /p "DO_UPDATE=是否更新至最新版本？ [Y/n] "
+                if /i "!DO_UPDATE!"=="n" (
+                    echo [INFO]  跳過更新，使用目前版本
+                ) else (
+                    echo [INFO]  更新中...
+                    git pull --ff-only origin main >nul 2>&1
+                    if !errorlevel!==0 (
+                        echo [OK]    已更新至最新版本
+                        set "NEED_REINSTALL=1"
+                    ) else (
+                        echo [WARN]  自動更新失敗（可能有本地修改），請手動執行: git pull
+                    )
+                )
+            ) else (
+                echo [OK]    已是最新版本
+            )
+        ) else (
+            echo [OK]    已是最新版本
+        )
+    )
+    echo.
+)
+
+:: ============================================================
 ::  1. 環境檢查
 :: ============================================================
 echo [INFO]  檢查環境...
@@ -115,20 +168,40 @@ if not exist "backend\.venv" (
 call backend\.venv\Scripts\activate.bat
 
 :: 檢查依賴
+set "BACKEND_MISSING=0"
 pip show fastapi >nul 2>&1
-if %errorlevel% neq 0 (
+if %errorlevel% neq 0 set "BACKEND_MISSING=1"
+
+if !BACKEND_MISSING!==1 (
     echo [WARN]  後端依賴尚未安裝
+) else if !NEED_REINSTALL!==1 (
+    echo [WARN]  偵測到版本更新，建議重新安裝後端依賴
+)
+
+if !BACKEND_MISSING!==1 (
+    set "DO_INSTALL=Y"
+) else if !NEED_REINSTALL!==1 (
+    set "DO_INSTALL=Y"
+) else (
+    set "DO_INSTALL="
+)
+
+if defined DO_INSTALL (
     set /p "INSTALL_BACKEND=是否自動安裝後端依賴？ [Y/n] "
     if /i "!INSTALL_BACKEND!"=="n" (
-        echo [ERROR] 需要安裝依賴，請手動執行: cd backend ^&^& pip install -e ".[dev]"
-        pause
-        exit /b 1
+        if !BACKEND_MISSING!==1 (
+            echo [ERROR] 需要安裝依賴，請手動執行: cd backend ^&^& pip install -e ".[dev]"
+            pause
+            exit /b 1
+        )
+        echo [INFO]  跳過後端依賴更新
+    ) else (
+        echo [INFO]  安裝後端依賴中...
+        cd backend
+        pip install -e ".[dev]" --quiet
+        cd "%SCRIPT_DIR%"
+        echo [OK]    後端依賴已安裝
     )
-    echo [INFO]  安裝後端依賴中...
-    cd backend
-    pip install -e ".[dev]" --quiet
-    cd "%SCRIPT_DIR%"
-    echo [OK]    後端依賴已安裝
 ) else (
     echo [OK]    後端依賴已安裝
 )
@@ -148,19 +221,39 @@ echo.
 :: ============================================================
 echo [INFO]  檢查前端環境...
 
-if not exist "frontend\node_modules" (
+set "FRONTEND_MISSING=0"
+if not exist "frontend\node_modules" set "FRONTEND_MISSING=1"
+
+if !FRONTEND_MISSING!==1 (
     echo [WARN]  前端依賴尚未安裝
+) else if !NEED_REINSTALL!==1 (
+    echo [WARN]  偵測到版本更新，建議重新安裝前端依賴
+)
+
+if !FRONTEND_MISSING!==1 (
+    set "DO_FE_INSTALL=Y"
+) else if !NEED_REINSTALL!==1 (
+    set "DO_FE_INSTALL=Y"
+) else (
+    set "DO_FE_INSTALL="
+)
+
+if defined DO_FE_INSTALL (
     set /p "INSTALL_FRONTEND=是否自動安裝前端依賴？ [Y/n] "
     if /i "!INSTALL_FRONTEND!"=="n" (
-        echo [ERROR] 需要安裝依賴，請手動執行: cd frontend ^&^& npm install
-        pause
-        exit /b 1
+        if !FRONTEND_MISSING!==1 (
+            echo [ERROR] 需要安裝依賴，請手動執行: cd frontend ^&^& npm install
+            pause
+            exit /b 1
+        )
+        echo [INFO]  跳過前端依賴更新
+    ) else (
+        echo [INFO]  安裝前端依賴中...
+        cd frontend
+        npm install --silent
+        cd "%SCRIPT_DIR%"
+        echo [OK]    前端依賴已安裝
     )
-    echo [INFO]  安裝前端依賴中...
-    cd frontend
-    npm install --silent
-    cd "%SCRIPT_DIR%"
-    echo [OK]    前端依賴已安裝
 ) else (
     echo [OK]    前端依賴已安裝
 )
