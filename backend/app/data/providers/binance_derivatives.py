@@ -6,6 +6,7 @@ from typing import Optional
 import httpx
 import pandas as pd
 
+from app.data.providers.binance_pair_resolver import resolve_futures_pair
 from app.db.session import async_session
 from app.services.settings_service import SettingsService
 
@@ -35,7 +36,7 @@ class BinanceDerivativesProvider:
 
         回傳 DataFrame 欄位: timestamp, open_interest, open_interest_value
         """
-        pair = f"{symbol.upper()}USDT"
+        pair = await resolve_futures_pair(symbol)
         headers = await self._get_headers()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -71,7 +72,7 @@ class BinanceDerivativesProvider:
 
         回傳 DataFrame 欄位: timestamp, long_short_ratio, long_account, short_account
         """
-        pair = f"{symbol.upper()}USDT"
+        pair = await resolve_futures_pair(symbol)
         headers = await self._get_headers()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -112,7 +113,7 @@ class BinanceDerivativesProvider:
 
         回傳 DataFrame 欄位: timestamp, buy_sell_ratio, buy_vol, sell_vol
         """
-        pair = f"{symbol.upper()}USDT"
+        pair = await resolve_futures_pair(symbol)
         headers = await self._get_headers()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:

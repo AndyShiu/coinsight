@@ -238,14 +238,27 @@ class TechnicalService:
         s1 = 2 * pp - high
         s2 = pp - (high - low)
 
+        # 根據價格大小動態決定小數位數
+        def _precision(price: float) -> int:
+            if price == 0:
+                return 2
+            abs_p = abs(price)
+            if abs_p >= 1:
+                return 2
+            # 小數幣：保留到有效數字 +2 位
+            import math
+            return max(2, -int(math.floor(math.log10(abs_p))) + 2)
+
+        ndigits = _precision(close)
+
         return {
             "symbol": symbol.upper(),
             "timeframe": timeframe,
             "levels": [
-                {"price": round(s2, 2), "label": "S2"},
-                {"price": round(s1, 2), "label": "S1"},
-                {"price": round(pp, 2), "label": "PP"},
-                {"price": round(r1, 2), "label": "R1"},
-                {"price": round(r2, 2), "label": "R2"},
+                {"price": round(s2, ndigits), "label": "S2"},
+                {"price": round(s1, ndigits), "label": "S1"},
+                {"price": round(pp, ndigits), "label": "PP"},
+                {"price": round(r1, ndigits), "label": "R1"},
+                {"price": round(r2, ndigits), "label": "R2"},
             ],
         }

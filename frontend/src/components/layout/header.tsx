@@ -347,7 +347,7 @@ export function Header() {
                       </div>
                       {displayResults.map((coin, idx) => (
                         <SearchRow
-                          key={`${coin.symbol}-${coin.name}`}
+                          key={`${coin.symbol}-${coin.name}-${idx}`}
                           symbol={coin.symbol}
                           name={coin.name}
                           rank={coin.market_cap_rank}

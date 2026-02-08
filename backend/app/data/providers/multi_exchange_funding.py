@@ -7,6 +7,8 @@ from typing import Optional
 import httpx
 import pandas as pd
 
+from app.data.providers.binance_pair_resolver import resolve_futures_pair
+
 logger = logging.getLogger(__name__)
 
 COLUMNS = ["exchange", "symbol", "rate", "predicted_rate"]
@@ -14,7 +16,7 @@ COLUMNS = ["exchange", "symbol", "rate", "predicted_rate"]
 
 async def _fetch_binance(client: httpx.AsyncClient, symbol: str) -> list[dict]:
     """Binance — 免費公開端點"""
-    pair = f"{symbol.upper()}USDT"
+    pair = await resolve_futures_pair(symbol)
     try:
         resp = await client.get(
             "https://fapi.binance.com/fapi/v1/premiumIndex",

@@ -1,11 +1,14 @@
 from __future__ import annotations
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 import ccxt.async_support as ccxt
 import pandas as pd
 
 from app.data.base import MarketDataProvider
+
+logger = logging.getLogger(__name__)
 
 
 class CCXTProvider(MarketDataProvider):
@@ -14,6 +17,7 @@ class CCXTProvider(MarketDataProvider):
     def __init__(self, exchange_id: str = "binance"):
         self._exchange_id = exchange_id
         self._exchange: ccxt.Exchange | None = None
+        self._pair_cache: dict[str, str] = {}  # symbol -> resolved pair
 
     async def _get_exchange(self) -> ccxt.Exchange:
         # 每次請求都建立新 exchange 實例，避免 event loop 問題
@@ -31,6 +35,40 @@ class CCXTProvider(MarketDataProvider):
             self._exchange = exchange_class({"enableRateLimit": True})
         return self._exchange
 
+    async def _resolve_pair(self, symbol: str) -> str:
+        """解析交易對：先嘗試 SYMBOL/USDT，找不到則搜尋包含該 symbol 的現貨 USDT 對。"""
+        upper = symbol.upper()
+        if upper in self._pair_cache:
+            return self._pair_cache[upper]
+
+        exchange = await self._get_exchange()
+        direct = f"{upper}/USDT"
+
+        # 確保 markets 已載入
+        if not exchange.markets:
+            await exchange.load_markets()
+
+        # 直接匹配
+        if direct in exchange.symbols:
+            self._pair_cache[upper] = direct
+            return direct
+
+        # 模糊搜尋：找包含該 symbol 關鍵字的現貨 USDT 對
+        candidates = [
+            s for s in exchange.symbols
+            if upper in s.upper() and s.endswith("/USDT") and ":" not in s
+        ]
+        if candidates:
+            # 優先選最短的（最精確匹配）
+            best = min(candidates, key=len)
+            logger.info(f"Resolved {upper} -> {best}")
+            self._pair_cache[upper] = best
+            return best
+
+        # 找不到，回傳原始 pair（讓後續報錯）
+        self._pair_cache[upper] = direct
+        return direct
+
     async def close(self) -> None:
         if self._exchange is not None:
             await self._exchange.close()
@@ -41,7 +79,7 @@ class CCXTProvider(MarketDataProvider):
         since: int | None = None,
     ) -> pd.DataFrame:
         exchange = await self._get_exchange()
-        pair = f"{symbol.upper()}/USDT"
+        pair = await self._resolve_pair(symbol)
         ohlcv = await exchange.fetch_ohlcv(pair, timeframe=timeframe, since=since, limit=limit)
 
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -54,8 +92,8 @@ class CCXTProvider(MarketDataProvider):
         prices: dict[str, float] = {}
 
         for symbol in symbols:
-            pair = f"{symbol.upper()}/USDT"
             try:
+                pair = await self._resolve_pair(symbol)
                 ticker = await exchange.fetch_ticker(pair)
                 prices[symbol.upper()] = ticker["last"]
             except Exception:
