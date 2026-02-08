@@ -5,6 +5,7 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 
 from app.dependencies import get_aggregator, get_market_service
 
@@ -39,12 +40,17 @@ async def get_market_overview(
     service: MarketService = Depends(get_market_service),
 ):
     """取得市場總覽（市值排名）"""
-    df = await service.get_market_overview(limit)
-    coins = [
-        MarketCoinResponse(**row)
-        for row in df.to_dict("records")
-    ]
-    return MarketOverviewResponse(coins=coins)
+    try:
+        df = await service.get_market_overview(limit)
+        df = df.fillna({"price": 0, "market_cap": 0, "volume_24h": 0, "change_24h": 0})
+        coins = [
+            MarketCoinResponse(**row)
+            for row in df.to_dict("records")
+        ]
+        return MarketOverviewResponse(coins=coins)
+    except Exception as e:
+        logger.warning(f"Market overview failed: {e}")
+        return MarketOverviewResponse(coins=[])
 
 
 @router.get("/search", response_model=list[CoinSearchResult])

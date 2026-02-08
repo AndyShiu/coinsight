@@ -4,8 +4,11 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from app.api.v1.router import api_router
 from app.config import settings
@@ -54,6 +57,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+class CatchAllMiddleware(BaseHTTPMiddleware):
+    """捕獲所有未處理的異常，回傳 JSON 500。"""
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            logger.error(f"Unhandled error: {exc}", exc_info=True)
+            return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+# Starlette middleware 是 LIFO：後加的在外層
+# CatchAllMiddleware 先加（內層），CORSMiddleware 後加（外層）
+# 這樣 CORS headers 會加到所有 response 上，包含 500 錯誤
+app.add_middleware(CatchAllMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
